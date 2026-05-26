@@ -33,12 +33,44 @@ def load_config():
         defaults['output'] = settings.get('output', None) or None
     return defaults
 
+def parse_page_selection(selection_str, total_pages):
+    selection_str = selection_str.lower().strip()
+    
+    if selection_str == 'all' or not selection_str:
+        return list(range(total_pages))
+    
+    selected_indices = set()
+    
+    try:
+        parts = [p.strip() for p in selection_str.split(',')]
+        
+        for part in parts:
+            if '-' in part:
+                start, end = map(int, part.split('-'))
+                if start < 1 or end > total_pages or start > end:
+                    raise ValueError(f"Range {start}-{end} is out of document bounds (1-{total_pages}).")
+                for i in range(start - 1, end):
+                    selected_indices.add(i)
+            else:
+                p_num = int(part)
+                if p_num < 1 or p_num > total_pages:
+                    raise ValueError(f"Page number {p_num} is out of document bounds (1-{total_pages}).")
+                selected_indices.add(p_num - 1)
+        
+        return sorted(list(selected_indices))
+        
+    except ValueError as e:
+        if "out of document bounds" in str(e):
+            raise e
+        raise ValueError("Invalid format. Use 'all', a single number (e.g. 3), or range (e.g. 1-10).")
+
 @click.command()
 @click.argument('url', required=False)
 @click.option('--output', '-o', help='Output filename')
+@click.option('--pages', '-p', help='Page range (e.g. "all", "3", or "1-10")')
 @click.option('--quality', '-q', type=int, help='Slide quality (2048 or 1024)')
 @click.option('--delay', '-d', type=float, help='Delay between scrolls (seconds)')
-def main(url, output, quality, delay):
+def main(url, output, pages, quality, delay):
     config_settings = load_config()
     
     if not url:
@@ -126,7 +158,23 @@ def main(url, output, quality, delay):
             num_slides = len(filtered_urls)
             console.print(f"[dim]Total Pages:[/dim]     [bold cyan]{num_slides}[/bold cyan]")
 
-        local_paths = [None] * num_slides
+        selected_pages_str = pages
+        if not selected_pages_str:
+            selected_pages_str = Prompt.ask(
+                "\n[bold yellow]Select Pages[/bold yellow] [dim](example: all, 5, or 1-10)[/dim]", 
+                default="all"
+            )
+        
+        try:
+            page_indices = parse_page_selection(selected_pages_str, num_slides)
+        except ValueError as e:
+            console.print(f"[red]Error:[/red] {str(e)}")
+            sys.exit(1)
+            
+        selected_urls = [filtered_urls[i] for i in page_indices]
+        num_selected = len(selected_urls)
+
+        local_paths = [None] * num_selected
         def download_slide(idx, asset_url):
             local_path = os.path.join(temp_dir, f"slide_{idx+1:03d}.jpg")
             for attempt in range(3):
@@ -146,10 +194,10 @@ def main(url, output, quality, delay):
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
             console=console
         ) as progress:
-            dl_task = progress.add_task(f"[green]Downloading slides...", total=num_slides)
+            dl_task = progress.add_task(f"[green]Downloading slides...", total=num_selected)
 
             with ThreadPoolExecutor(max_workers=8) as executor:
-                futures = {executor.submit(download_slide, i, asset_url): i for i, asset_url in enumerate(filtered_urls)}
+                futures = {executor.submit(download_slide, i, asset_url): i for i, asset_url in enumerate(selected_urls)}
                 for future in as_completed(futures):
                     idx, path = future.result()
                     if path: local_paths[idx] = path
@@ -163,6 +211,10 @@ def main(url, output, quality, delay):
                 
                 if not output_file.lower().endswith(".pdf"):
                     output_file += ".pdf"
+                    
+                if selected_pages_str.lower() != "all":
+                    clean_range = selected_pages_str.replace(' ', '')
+                    output_file = f"{os.path.splitext(output_file)[0]}_[{clean_range}].pdf"
 
                 if not os.path.isabs(output_file) and not os.path.dirname(output_file):
                     os.makedirs("output", exist_ok=True)

@@ -22,6 +22,7 @@ This tool is for personal archival of publicly available content or presentation
 - **Auto-Organized Output**: Downloaded PDFs are neatly saved into the `output/` folder by default.
 - **Safe Naming**: Automatically sanitizes filenames so they work flawlessly across Windows, Mac, and Linux.
 - **Reliable Cleanup**: Temporary files are handled safely and automatically cleaned up, even if you stop the script midway.
+- **Pick Pages**: Download the whole presentation or just specific pages (e.g., `1-10`).
 - **Auto-Retry**: Tries again if a slide fails to download (up to 3 times).
 - **High Quality**: Captures slides in HD (2048px) for better reading and printing.
 - **Join PDF**: Combines all slides into a single, clean PDF file.
