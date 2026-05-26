@@ -5,6 +5,9 @@ import requests
 import click
 import configparser
 import img2pdf
+import tempfile
+import atexit
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
@@ -52,9 +55,9 @@ def main(url, output, quality, delay):
         console.print("[red]Error:[/red] Invalid SlideShare URL. Target mapping failed.")
         sys.exit(1)
 
-    temp_dir = "temp_slides"
-    if not os.path.exists(temp_dir):
-        os.makedirs(temp_dir)
+    temp_dir_obj = tempfile.TemporaryDirectory(prefix="slidesharedl_")
+    temp_dir = temp_dir_obj.name
+    atexit.register(temp_dir_obj.cleanup)
 
     with sync_playwright() as p:
         with Progress(
@@ -86,7 +89,7 @@ def main(url, output, quality, delay):
             if not doc_title:
                 doc_title = url_title or page.title().replace(' | SlideShare', '').strip()
 
-            doc_title = "".join([c for c in doc_title if c.isalnum() or c in (' ', '-', '_')]).strip()
+            doc_title = re.sub(r'[<>:"/\\|?*]', '', doc_title).strip('. ')
             if not doc_title or doc_title.lower() == 'slideshare':
                  doc_title = "Archived_Presentation"
 
@@ -123,7 +126,6 @@ def main(url, output, quality, delay):
             num_slides = len(filtered_urls)
             console.print(f"[dim]Total Pages:[/dim]     [bold cyan]{num_slides}[/bold cyan]")
 
-        # Phase 2: Action logic
         local_paths = [None] * num_slides
         def download_slide(idx, asset_url):
             local_path = os.path.join(temp_dir, f"slide_{idx+1:03d}.jpg")
@@ -133,7 +135,7 @@ def main(url, output, quality, delay):
                     if r.status_code == 200:
                         with open(local_path, "wb") as f: f.write(r.content)
                         return idx, local_path
-                except:
+                except requests.RequestException:
                     time.sleep(2)
             return idx, None
 
@@ -162,15 +164,21 @@ def main(url, output, quality, delay):
                 if not output_file.lower().endswith(".pdf"):
                     output_file += ".pdf"
 
+                if not os.path.isabs(output_file) and not os.path.dirname(output_file):
+                    os.makedirs("output", exist_ok=True)
+                    output_file = os.path.join("output", output_file)
+
                 with open(output_file, "wb") as f:
                     f.write(img2pdf.convert(final_paths))
                 
                 progress.update(pdf_task, completed=100)
                 time.sleep(0.5)
                 
-                for f in final_paths: os.remove(f)
-                try: os.rmdir(temp_dir)
-                except: pass
+                try:
+                    temp_dir_obj.cleanup()
+                    atexit.unregister(temp_dir_obj.cleanup)
+                except Exception:
+                    pass
                 
                 console.print(f"\n[bold green]Success![/bold green] Saved as: [white]{output_file}[/white]")
             else:

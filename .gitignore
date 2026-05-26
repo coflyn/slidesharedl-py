@@ -6,9 +6,8 @@ __pycache__/
 *.pyd
 
 # Application specific
-temp_slides/
+output/
 *.pdf
-
 # System files
 .DS_Store
 .vscode/
