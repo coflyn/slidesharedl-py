@@ -1,5 +1,5 @@
-playwright
-rich
-click
-requests
-img2pdf
+playwright==1.60.0
+img2pdf==0.6.3
+rich==15.0.0
+click==8.4.1
+requests==2.34.2

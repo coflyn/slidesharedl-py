@@ -8,6 +8,8 @@ __pycache__/
 # Application specific
 output/
 *.pdf
+history.json
+
 # System files
 .DS_Store
 .vscode/

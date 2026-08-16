@@ -8,6 +8,8 @@ import img2pdf
 import tempfile
 import atexit
 import re
+import json
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
@@ -64,24 +66,52 @@ def parse_page_selection(selection_str, total_pages):
             raise e
         raise ValueError("Invalid format. Use 'all', a single number (e.g. 3), or range (e.g. 1-10).")
 
+def log_history(url, title, pages_count, output_file):
+    history_file = "history.json"
+    history = []
+    
+    if os.path.exists(history_file):
+        try:
+            with open(history_file, 'r') as f:
+                history = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            history = []
+            
+    new_entry = {
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "title": title,
+        "url": url,
+        "pages": pages_count,
+        "output": output_file
+    }
+    
+    history.append(new_entry)
+    
+    with open(history_file, 'w') as f:
+        json.dump(history, f, indent=4)
+
 @click.command()
 @click.argument('url', required=False)
 @click.option('--output', '-o', help='Output filename')
 @click.option('--pages', '-p', help='Page range (e.g. "all", "3", or "1-10")')
 @click.option('--quality', '-q', type=int, help='Slide quality (2048 or 1024)')
 @click.option('--delay', '-d', type=float, help='Delay between scrolls (seconds)')
-def main(url, output, pages, quality, delay):
+@click.option('--quiet', is_flag=True, help='Disable progress output')
+def main(url, output, pages, quality, delay, quiet):
     config_settings = load_config()
     
     if not url:
         url = Prompt.ask("[bold cyan]Input SlideShare URL[/bold cyan]")
+
+    url = url.strip().strip("'\"")
 
     final_output = output if output is not None else config_settings['output']
     final_quality = quality if quality is not None else config_settings['quality']
     final_delay = delay if delay is not None else config_settings['scroll_delay']
     final_iterations = config_settings['scroll_iterations']
 
-    console.print(f"\n[bold cyan]slidesharedl-py[/bold cyan] | [dim]Simple SlideShare Downloader[/dim]\n", justify="center")
+    if not quiet:
+        console.print(f"\n[bold cyan]slidesharedl-py[/bold cyan] | [dim]Simple SlideShare Downloader[/dim]\n", justify="center")
     
     if "slideshare.net" not in url:
         console.print("[red]Error:[/red] Invalid SlideShare URL. Target mapping failed.")
@@ -95,7 +125,8 @@ def main(url, output, pages, quality, delay):
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
-            console=console
+            console=console,
+            disable=quiet
         ) as progress:
             
             scan_task = progress.add_task("[cyan]Loading information from SlideShare...", total=None)
@@ -125,7 +156,8 @@ def main(url, output, pages, quality, delay):
             if not doc_title or doc_title.lower() == 'slideshare':
                  doc_title = "Archived_Presentation"
 
-            console.print(f"[dim]Title:[/dim]          [bold white]{doc_title}[/bold white]")
+            if not quiet:
+                console.print(f"[dim]Title:[/dim]          [bold white]{doc_title}[/bold white]")
 
             last_pos = 0
             for _ in range(60): 
@@ -156,7 +188,8 @@ def main(url, output, pages, quality, delay):
                 sys.exit(1)
 
             num_slides = len(filtered_urls)
-            console.print(f"[dim]Total Pages:[/dim]     [bold cyan]{num_slides}[/bold cyan]")
+            if not quiet:
+                console.print(f"[dim]Total Pages:[/dim]     [bold cyan]{num_slides}[/bold cyan]")
 
         selected_pages_str = pages
         if not selected_pages_str:
@@ -192,7 +225,8 @@ def main(url, output, pages, quality, delay):
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
             TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-            console=console
+            console=console,
+            disable=quiet
         ) as progress:
             dl_task = progress.add_task(f"[green]Downloading slides...", total=num_selected)
 
@@ -226,13 +260,16 @@ def main(url, output, pages, quality, delay):
                 progress.update(pdf_task, completed=100)
                 time.sleep(0.5)
                 
+                log_history(url, doc_title, len(page_indices), output_file)
+                
                 try:
                     temp_dir_obj.cleanup()
                     atexit.unregister(temp_dir_obj.cleanup)
                 except Exception:
                     pass
                 
-                console.print(f"\n[bold green]Success![/bold green] Saved as: [white]{output_file}[/white]")
+                if not quiet:
+                    console.print(f"\n[bold green]Success![/bold green] Saved as: [white]{output_file}[/white]")
             else:
                 console.print("[red]Error:[/red] No slides captured. Downloading failed.")
 
