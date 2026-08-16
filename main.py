@@ -11,6 +11,11 @@ import re
 import json
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from PIL import Image
+from pptx import Presentation
+from pptx.util import Inches, Pt
+from docx import Document
+from docx.shared import Inches as DocxInches
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 from rich.prompt import Prompt
@@ -23,6 +28,7 @@ def load_config():
     config.read('config.ini')
     defaults = {
         'quality': 2048,
+        'format': 'pdf',
         'scroll_delay': 1.0,
         'scroll_iterations': 10,
         'output': None
@@ -30,6 +36,7 @@ def load_config():
     if 'SETTINGS' in config:
         settings = config['SETTINGS']
         defaults['quality'] = settings.getint('quality', 2048)
+        defaults['format'] = settings.get('format', 'pdf').lower()
         defaults['scroll_delay'] = settings.getfloat('scroll_delay', 1.0)
         defaults['scroll_iterations'] = settings.getint('scroll_iterations', 10)
         defaults['output'] = settings.get('output', None) or None
@@ -90,14 +97,61 @@ def log_history(url, title, pages_count, output_file):
     with open(history_file, 'w') as f:
         json.dump(history, f, indent=4)
 
+def convert_image_for_office(img_path):
+    """Ensure image is JPEG/PNG for python-pptx / python-docx compatibility."""
+    with Image.open(img_path) as img:
+        if img.format not in ['JPEG', 'PNG']:
+            rgb_img = img.convert('RGB')
+            jpg_path = os.path.splitext(img_path)[0] + ".jpg"
+            rgb_img.save(jpg_path, 'JPEG', quality=95)
+            return jpg_path
+    return img_path
+
+def export_to_pptx(image_paths, output_file):
+    prs = Presentation()
+    blank_slide_layout = prs.slide_layouts[6]
+    
+    prepared_paths = [convert_image_for_office(p) for p in image_paths]
+    
+    if prepared_paths:
+        with Image.open(prepared_paths[0]) as first_img:
+            w, h = first_img.size
+        aspect_ratio = w / h
+        prs.slide_width = Inches(10)
+        prs.slide_height = Inches(10 / aspect_ratio)
+        
+    for img_path in prepared_paths:
+        slide = prs.slides.add_slide(blank_slide_layout)
+        slide.shapes.add_picture(img_path, 0, 0, width=prs.slide_width, height=prs.slide_height)
+        
+    prs.save(output_file)
+
+def export_to_docx(image_paths, output_file):
+    doc = Document()
+    for section in doc.sections:
+        section.top_margin = DocxInches(0.5)
+        section.bottom_margin = DocxInches(0.5)
+        section.left_margin = DocxInches(0.5)
+        section.right_margin = DocxInches(0.5)
+        
+    prepared_paths = [convert_image_for_office(p) for p in image_paths]
+        
+    for i, img_path in enumerate(prepared_paths):
+        doc.add_picture(img_path, width=DocxInches(7.5))
+        if i < len(prepared_paths) - 1:
+            doc.add_page_break()
+            
+    doc.save(output_file)
+
 @click.command()
 @click.argument('url', required=False)
 @click.option('--output', '-o', help='Output filename')
 @click.option('--pages', '-p', help='Page range (e.g. "all", "3", or "1-10")')
+@click.option('--format', '-f', type=click.Choice(['pdf', 'pptx', 'docx'], case_sensitive=False), help='Export format (pdf, pptx, or docx)')
 @click.option('--quality', '-q', type=int, help='Slide quality (2048 or 1024)')
 @click.option('--delay', '-d', type=float, help='Delay between scrolls (seconds)')
 @click.option('--quiet', is_flag=True, help='Disable progress output')
-def main(url, output, pages, quality, delay, quiet):
+def main(url, output, pages, format, quality, delay, quiet):
     config_settings = load_config()
     
     if not url:
@@ -106,9 +160,9 @@ def main(url, output, pages, quality, delay, quiet):
     url = url.strip().strip("'\"")
 
     final_output = output if output is not None else config_settings['output']
+    final_format = format.lower() if format is not None else config_settings['format']
     final_quality = quality if quality is not None else config_settings['quality']
     final_delay = delay if delay is not None else config_settings['scroll_delay']
-    final_iterations = config_settings['scroll_iterations']
 
     if not quiet:
         console.print(f"\n[bold cyan]slidesharedl-py[/bold cyan] | [dim]Simple SlideShare Downloader[/dim]\n", justify="center")
@@ -240,24 +294,32 @@ def main(url, output, pages, quality, delay, quiet):
             final_paths = [p for p in local_paths if p is not None]
 
             if final_paths:
-                pdf_task = progress.add_task("[yellow]Saving to PDF file...", total=100)
-                output_file = final_output or f"{doc_title}.pdf"
+                export_task = progress.add_task(f"[yellow]Saving to {final_format.upper()} file...", total=100)
+                output_file = final_output or f"{doc_title}.{final_format}"
                 
-                if not output_file.lower().endswith(".pdf"):
-                    output_file += ".pdf"
+                ext = f".{final_format}"
+                if not output_file.lower().endswith(ext):
+                    output_file += ext
                     
                 if selected_pages_str.lower() != "all":
                     clean_range = selected_pages_str.replace(' ', '')
-                    output_file = f"{os.path.splitext(output_file)[0]}_[{clean_range}].pdf"
+                    base_name = os.path.splitext(output_file)[0]
+                    output_file = f"{base_name}_[{clean_range}]{ext}"
 
                 if not os.path.isabs(output_file) and not os.path.dirname(output_file):
                     os.makedirs("output", exist_ok=True)
                     output_file = os.path.join("output", output_file)
 
-                with open(output_file, "wb") as f:
-                    f.write(img2pdf.convert(final_paths))
+                # Export to requested format
+                if final_format == 'pdf':
+                    with open(output_file, "wb") as f:
+                        f.write(img2pdf.convert(final_paths))
+                elif final_format == 'pptx':
+                    export_to_pptx(final_paths, output_file)
+                elif final_format == 'docx':
+                    export_to_docx(final_paths, output_file)
                 
-                progress.update(pdf_task, completed=100)
+                progress.update(export_task, completed=100)
                 time.sleep(0.5)
                 
                 log_history(url, doc_title, len(page_indices), output_file)

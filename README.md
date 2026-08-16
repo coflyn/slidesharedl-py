@@ -1,12 +1,12 @@
 # SlideShare Downloader (slidesharedl-py) 📄
 
-> Simple tool to save SlideShare presentations as PDF files.
+> Simple tool to save SlideShare presentations as PDF, PPTX, or DOCX files.
 
-![Version](https://img.shields.io/badge/version-3.0.0-cyan.svg)
+![Version](https://img.shields.io/badge/version-3.1.0-cyan.svg)
 ![Python](https://img.shields.io/badge/python-3.8+-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 
-**SlideShare Downloader (slidesharedl-py)** is a CLI tool that helps you save SlideShare presentations into high-quality PDF files for offline reading. It captures slides at their highest available resolution (HD 2048px) and handles lazy-loading automatically.
+**SlideShare Downloader (slidesharedl-py)** is a CLI tool that helps you save SlideShare presentations into PDF, PPTX (PowerPoint), or DOCX (Word) files for offline reading and presentation. It captures slides at their highest available resolution (HD 2048px) and handles lazy-loading automatically.
 
 ---
 
@@ -18,14 +18,14 @@ This tool is intended for personal archival of presentations you already have le
 
 ### Key Features
 
+- **Multi-Format Export**: Save presentations as **PDF**, **PPTX** (PowerPoint), or **DOCX** (Word Document).
 - **Smart Loading**: Automatically detects and loads every slide asset in the background.
-- **Auto-Organized Output**: Downloaded PDFs are neatly saved into the `output/` folder by default.
+- **Auto-Organized Output**: Downloaded files are neatly saved into the `output/` folder by default.
 - **Safe Naming**: Automatically sanitizes filenames so they work flawlessly across Windows, Mac, and Linux.
 - **Reliable Cleanup**: Temporary files are handled safely and automatically cleaned up, even if you stop the script midway.
 - **High Quality**: Captures slides in HD (2048px) for better reading and printing.
 - **Pick Pages**: Download the whole presentation or just specific pages (e.g., `1-10`).
 - **Parallel Downloading**: Downloads slides concurrently using multi-threading for maximum speed.
-- **Join PDF**: Combines all captured slides into a single, clean PDF file.
 - **History Log**: Keeps a record of each download in `history.json`.
 
 ---
@@ -61,16 +61,21 @@ python main.py "SLIDESHARE_URL"
 
 **CLI Options:**
 
+- `-f, --format` : Export format (`pdf`, `pptx`, or `docx`). Default: `pdf`.
 - `-o, --output` : Custom output filename.
-- `-p, --pages`  : Page selection (`all`, `3`, or `1-10`).
+- `-p, --pages` : Page selection (`all`, `3`, or `1-10`).
 - `-q, --quality`: Slide resolution (`2048` for HD or `1024` for SD).
-- `-d, --delay`  : Custom delay per scroll step (seconds).
-- `--quiet`      : Disable progress output (silent mode).
+- `-d, --delay` : Custom delay per scroll step (seconds).
+- `--quiet` : Disable progress output (silent mode).
 
-**Example:**
+**Examples:**
 
 ```bash
-python main.py "https://www.slideshare.net/slideshow/contoh-proposalbusiness/59067769" --pages "1-5" --quality 2048
+# Export as PowerPoint PPTX
+python main.py "https://www.slideshare.net/slideshow/.../..." --format pptx
+
+# Export as Word Document DOCX
+python main.py "https://www.slideshare.net/slideshow/.../..." --format docx --pages "1-5"
 ```
 
 ---
@@ -84,14 +89,17 @@ You can set permanent default options in `config.ini` so you don't need to speci
 # Desired slide quality in pixels (2048 for HD or 1024 for SD)
 quality = 2048
 
+# Default export format (pdf, pptx, or docx)
+format = pdf
+
 # Pause duration during scrolling in seconds (default: 1.0)
 scroll_delay = 1.0
 
 # Number of scroll iterations to trigger lazy loading
-scroll_iterations = 10
+scroll_iterations = 5
 
 # Default output filename (Leave empty to auto-detect presentation title)
-output = 
+output =
 ```
 
 ---
