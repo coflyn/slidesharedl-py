@@ -104,9 +104,12 @@ output =
 
 ---
 
-### Supported Contents
+### Supported Contents & Formats
 
-- [x] SlideShare Presentations
+- [x] SlideShare Presentations / Slides (`.ppt`, `.pptx`)
+- [x] SlideShare Documents & Reports (`.doc`, `.docx`, `.pdf`)
+- [x] SlideShare Infographics & Images
+- [x] Export output to **PDF**, **PPTX** (PowerPoint), or **DOCX** (Word)
 
 ---
 
