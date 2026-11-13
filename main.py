@@ -8,6 +8,7 @@ import img2pdf
 import tempfile
 import atexit
 import re
+from collections import Counter
 import json
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -221,27 +222,90 @@ def main(url, output, pages, format, quality, delay, quiet):
                 if new_pos == last_pos: break
                 last_pos = new_pos
 
-            image_urls_raw = page.evaluate("""() => {
-                const imgs = Array.from(document.querySelectorAll('img[class*="VerticalSlideImage"], img[data-full], .slide-image'));
-                return imgs.map(img => img.getAttribute("data-full") || img.getAttribute("data-normal") || img.getAttribute("src"));
-            }""")
-            browser.close()
 
+            image_urls_raw = page.evaluate("""() => {
+                const attributes = [
+                    'src',
+                    'data-src',
+                    'data-full',
+                    'data-normal',
+                    'data-original',
+                    'srcset'
+                ];
+
+                const urls = [];
+
+                for (const img of document.querySelectorAll('img')) {
+                    for (const attr of attributes) {
+                        const value = img.getAttribute(attr);
+                        if (!value) continue;
+
+                        if (attr === 'srcset') {
+                            value.split(',').forEach(part => {
+                                urls.push(part.trim().split(/\\s+/)[0]);
+                            });
+                        } else {
+                            urls.push(value);
+                        }
+                    }
+                }
+
+                return [...new Set(urls)].filter(url =>
+                    url.includes('image.slidesharecdn.com')
+                );
+            }""")
+
+            # Agrupar imágenes por número de diapositiva
+            slide_candidates = {}
+
+            for image_url in image_urls_raw:
+                match = re.search(
+                    r'-(\d+)-(\d+)\.jpg(?:[?#].*)?$',
+                    image_url,
+                    re.IGNORECASE
+                )
+
+                if not match:
+                    continue
+
+                slide_number = int(match.group(1))
+                resolution = int(match.group(2))
+
+                slide_candidates.setdefault(slide_number, []).append(
+                    (resolution, image_url)
+                )
+
+            # Seleccionar una imagen por diapositiva
             filtered_urls = []
-            seen = set()
-            for u in image_urls_raw:
-                if not u or not u.startswith("http") or u in seen: continue
-                if "slidesharecdn.com" not in u and "sscdn.co" not in u: continue
-                
-                seen.add(u)
-                clean_u = u.replace("-1024.jpg", f"-{final_quality}.jpg").replace("-2048.jpg", f"-{final_quality}.jpg").replace("-638.jpg", f"-{final_quality}.jpg").split("?")[0]
-                filtered_urls.append(clean_u)
-            
+            target_quality = int(final_quality)
+
+            for slide_number in sorted(slide_candidates):
+                candidates = slide_candidates[slide_number]
+
+                # Preferir la mayor resolución que no supere la solicitada
+                available = [
+                    item for item in candidates
+                    if item[0] <= target_quality
+                ]
+
+                if available:
+                    selected = max(available, key=lambda item: item[0])
+                else:
+                    selected = min(candidates, key=lambda item: item[0])
+
+                filtered_urls.append(selected[1])
+
             if not filtered_urls:
-                console.print("[red]Error:[/red] No slide assets detected. Source might be restricted.")
+                console.print("[red]Error:[/red] No se encontraron imágenes con el patrón esperado.")
+                console.print("URLs detectadas:", image_urls_raw[:10])
                 sys.exit(1)
 
             num_slides = len(filtered_urls)
+
+            if not quiet:
+                console.print(f"[dim]Imágenes detectadas:[/dim] {len(image_urls_raw)}")
+                console.print(f"[dim]Diapositivas únicas:[/dim] [bold cyan]{num_slides}[/bold cyan]")
+
             if not quiet:
                 console.print(f"[dim]Total Pages:[/dim]     [bold cyan]{num_slides}[/bold cyan]")
 
