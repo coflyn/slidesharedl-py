@@ -8,7 +8,6 @@ import img2pdf
 import tempfile
 import atexit
 import re
-from collections import Counter
 import json
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -254,8 +253,9 @@ def main(url, output, pages, format, quality, delay, quiet):
                     url.includes('image.slidesharecdn.com')
                 );
             }""")
+            browser.close()
 
-            # Agrupar imágenes por número de diapositiva
+            # Group images by slide number
             slide_candidates = {}
 
             for image_url in image_urls_raw:
@@ -275,14 +275,14 @@ def main(url, output, pages, format, quality, delay, quiet):
                     (resolution, image_url)
                 )
 
-            # Seleccionar una imagen por diapositiva
+            # Select one image per slide
             filtered_urls = []
             target_quality = int(final_quality)
 
             for slide_number in sorted(slide_candidates):
                 candidates = slide_candidates[slide_number]
 
-                # Preferir la mayor resolución que no supere la solicitada
+                # Prefer highest resolution <= target_quality
                 available = [
                     item for item in candidates
                     if item[0] <= target_quality
@@ -296,15 +296,12 @@ def main(url, output, pages, format, quality, delay, quiet):
                 filtered_urls.append(selected[1])
 
             if not filtered_urls:
-                console.print("[red]Error:[/red] No se encontraron imágenes con el patrón esperado.")
-                console.print("URLs detectadas:", image_urls_raw[:10])
+                console.print("[red]Error:[/red] No slide assets detected matching expected pattern.")
+                if not quiet and image_urls_raw:
+                    console.print("Detected sample URLs:", image_urls_raw[:5])
                 sys.exit(1)
 
             num_slides = len(filtered_urls)
-
-            if not quiet:
-                console.print(f"[dim]Imágenes detectadas:[/dim] {len(image_urls_raw)}")
-                console.print(f"[dim]Diapositivas únicas:[/dim] [bold cyan]{num_slides}[/bold cyan]")
 
             if not quiet:
                 console.print(f"[dim]Total Pages:[/dim]     [bold cyan]{num_slides}[/bold cyan]")
